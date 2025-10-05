@@ -10,6 +10,9 @@ func SetupRoutes(r *gin.Engine) {
 	// Public routes
 	r.POST("/signup", handlers.Signup)
 	r.POST("/login", handlers.Login)
+	r.POST("/sendOtp", handlers.SendOTP)
+	r.POST("/resendOtp", handlers.ResendOTP)
+	r.POST("/verifyOtp", handlers.VerifyOTP)
 
 	// Protected routes (require JWT)
 	// auth := r.Group("/")

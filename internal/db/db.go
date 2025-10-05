@@ -15,15 +15,18 @@ func Connect() {
 	var err error
 	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		panic("Failed to connect to database!")
+		panic("Failed to connect to database: " + err.Error())
 	}
 
 	fmt.Println("Database connected")
 
-	// Auto-migrate tables
-	err = DB.AutoMigrate(&models.User{})
+	err = DB.AutoMigrate(
+		&models.User{},
+		&models.OTP{},
+	)
 	if err != nil {
 		panic("Failed to migrate database: " + err.Error())
 	}
 
+	fmt.Println("Database migration completed")
 }

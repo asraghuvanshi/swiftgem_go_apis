@@ -1,6 +1,6 @@
 "# swiftgem_go_apis" 
 
-social-app/
+swiftgem_go_apis
 ├── cmd/
 │   └── main.go              # Application entry point (wires dependencies, starts server)
 ├── internal/
