@@ -1,26 +1,32 @@
+// internal/routes/routes.go
 package routes
 
 import (
 	"swiftgem_go_apis/internal/handlers"
+	"swiftgem_go_apis/internal/middlewares"
 
 	"github.com/gin-gonic/gin"
 )
 
 func SetupRoutes(r *gin.Engine) {
-	// Public routes
-	r.POST("/signup", handlers.Signup)
-	r.POST("/login", handlers.Login)
-	r.POST("/sendOtp", handlers.SendOTP)
-	r.POST("/resendOtp", handlers.ResendOTP)
-	r.POST("/verifyOtp", handlers.VerifyOTP)
+	v1 := r.Group("/v1")
+	{
+		auth := v1.Group("/auth")
+		{
+			auth.POST("/signup", handlers.Signup)
+			auth.POST("/send-otp", handlers.SendOTP)
+			auth.POST("/resend-otp", handlers.ResendOTP)
+			auth.POST("/verify-otp", handlers.VerifyOTP)
+			auth.POST("/login", handlers.Login)
+		}
 
-	// Protected routes (require JWT)
-	// auth := r.Group("/")
-	// auth.Use(middlewares.JWTMiddleware())
-	// {
-	// 	auth.GET("/profile", handlers.GetProfile)             // example protected route
-	// 	auth.POST("/posts", handlers.CreatePost)              // create a post
-	// 	auth.GET("/feed", handlers.GetFeed)                   // fetch feed
-	// 	auth.GET("/notifications", handlers.GetNotifications) // notifications
-	// }
+		// Protected routes
+		protected := v1.Group("")
+		protected.Use(middlewares.JWTAuth())
+		{
+			protected.POST("/posts", handlers.CreatePost)
+			protected.GET("/home/posts", handlers.GetHomePosts)
+			// Add more: user/profile, chats, etc.
+		}
+	}
 }

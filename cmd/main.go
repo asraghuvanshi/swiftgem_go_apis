@@ -1,6 +1,7 @@
 package main
 
 import (
+	"swiftgem_go_apis/internal/config"
 	"swiftgem_go_apis/internal/db"
 	"swiftgem_go_apis/internal/routes"
 
@@ -8,10 +9,14 @@ import (
 )
 
 func main() {
-	db.Connect() // Connect to database
+	config.LoadConfig()
+	db.Connect()
 
-	r := gin.Default()    // Initialize Gin
-	routes.SetupRoutes(r) // Setup all routes
+	r := gin.Default()
+	r.Use(gin.Logger())
+	r.Use(gin.Recovery())
 
-	r.Run(":8080")
+	routes.SetupRoutes(r)
+
+	r.Run(":" + config.AppConfig.Port)
 }

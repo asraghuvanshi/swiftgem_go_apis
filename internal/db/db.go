@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"swiftgem_go_apis/internal/config"
 	"swiftgem_go_apis/internal/models"
 
 	"gorm.io/driver/postgres"
@@ -11,9 +12,8 @@ import (
 var DB *gorm.DB
 
 func Connect() {
-	dsn := "host=localhost user=postgres password=1234 dbname=swiftgem_go_apis port=5432 sslmode=disable"
 	var err error
-	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	DB, err = gorm.Open(postgres.Open(config.AppConfig.DBDSN), &gorm.Config{})
 	if err != nil {
 		panic("Failed to connect to database: " + err.Error())
 	}
@@ -22,7 +22,10 @@ func Connect() {
 
 	err = DB.AutoMigrate(
 		&models.User{},
-		&models.OTP{},
+		&models.Post{},
+		&models.Feed{},
+		&models.Notification{},
+		// &models.Chat{}, // Uncomment when chats module is implemented
 	)
 	if err != nil {
 		panic("Failed to migrate database: " + err.Error())

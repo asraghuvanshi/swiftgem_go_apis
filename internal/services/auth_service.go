@@ -1,8 +1,13 @@
 package services
 
 import (
+	"crypto/rand"
 	"errors"
-	"math/rand"
+	"fmt"
+	"log"
+	"math/big"
+	"net/smtp"
+	"swiftgem_go_apis/internal/config"
 	"swiftgem_go_apis/internal/models"
 	"swiftgem_go_apis/internal/repositories"
 	"time"
@@ -11,29 +16,120 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var JwtSecret = []byte("swiftgem_go_apis")
-
-// ---------------- Password Hashing ---------------- //
-
-func HashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
-	return string(bytes), err
+func GenerateOTP() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(900000))
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%06d", n.Int64()+100000), nil
 }
 
-func CheckPasswordHash(password, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
-	return err == nil
-}
+func SendOTP(email, otp string) error {
+	from := config.AppConfig.MailFrom
+	to := []string{email}
+	msg := []byte(fmt.Sprintf("To: %s\r\n"+
+		"Subject: Your OTP Code\r\n"+
+		"\r\n"+
+		"Your OTP is: %s\r\n", email, otp))
 
-// ---------------- Signup & Login ---------------- //
+	auth := smtp.PlainAuth("", config.AppConfig.MailUsername, config.AppConfig.MailPassword, config.AppConfig.MailHost)
+	addr := fmt.Sprintf("%s:%s", config.AppConfig.MailHost, config.AppConfig.MailPort)
+	err := smtp.SendMail(addr, auth, from, to, msg)
+	if err != nil {
+		log.Printf("Failed to send OTP to %s: %v", email, err)
+		return fmt.Errorf("failed to send OTP: %w", err)
+	}
+	log.Printf("OTP sent to %s", email)
+	return nil
+}
 
 func Signup(user *models.User) error {
-	hashed, err := HashPassword(user.Password)
+	_, err := repositories.GetUserByEmail(user.Email)
+	if err == nil {
+		return errors.New("email already exists")
+	}
+
+	hashedPass, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
 	}
-	user.Password = hashed
-	return repositories.CreateUser(user)
+	user.Password = string(hashedPass)
+	user.IsVerified = false
+	// OTP and OTPExpiry are not set here; will be set in SendOTPService
+
+	err = repositories.CreateUser(user)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func SendOTPService(email string) error {
+	user, err := repositories.GetUserByEmail(email)
+	if err != nil {
+		return errors.New("user not found")
+	}
+
+	if user.IsVerified {
+		return errors.New("user already verified")
+	}
+
+	otp, err := GenerateOTP()
+	if err != nil {
+		return err
+	}
+	user.OTP = otp
+	user.OTPExpiry = time.Now().Add(10 * time.Minute)
+
+	err = repositories.UpdateUser(user)
+	if err != nil {
+		return err
+	}
+
+	return SendOTP(user.Email, otp)
+}
+
+func ResendOTP(email string) error {
+	// Same logic as SendOTPService; kept separate for clarity
+	user, err := repositories.GetUserByEmail(email)
+	if err != nil {
+		return errors.New("user not found")
+	}
+
+	if user.IsVerified {
+		return errors.New("user already verified")
+	}
+
+	otp, err := GenerateOTP()
+	if err != nil {
+		return err
+	}
+	user.OTP = otp
+	user.OTPExpiry = time.Now().Add(10 * time.Minute)
+
+	err = repositories.UpdateUser(user)
+	if err != nil {
+		return err
+	}
+
+	return SendOTP(user.Email, otp)
+}
+
+func VerifyOTP(email, otp string) error {
+	user, err := repositories.GetUserByEmail(email)
+	if err != nil {
+		return errors.New("user not found")
+	}
+
+	if user.OTP != otp || time.Now().After(user.OTPExpiry) {
+		return errors.New("invalid or expired OTP")
+	}
+
+	user.IsVerified = true
+	user.OTP = ""
+	user.OTPExpiry = time.Time{}
+	return repositories.UpdateUser(user)
 }
 
 func Login(email, password string) (string, error) {
@@ -41,88 +137,20 @@ func Login(email, password string) (string, error) {
 	if err != nil {
 		return "", errors.New("user not found")
 	}
-	if !CheckPasswordHash(password, user.Password) {
-		return "", errors.New("invalid credentials")
+
+	if !user.IsVerified {
+		return "", errors.New("email not verified")
 	}
 
-	return GenerateJWTByUser(user)
-}
+	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
+	if err != nil {
+		return "", errors.New("invalid password")
+	}
 
-// ---------------- JWT Generation ---------------- //
-
-func GenerateJWTByUser(user *models.User) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": user.ID,
-		"exp":     time.Now().Add(72 * time.Hour).Unix(),
+		"exp":     time.Now().Add(time.Minute * time.Duration(config.AppConfig.JWTExpirationMin)).Unix(),
 	})
-	return token.SignedString(JwtSecret)
-}
 
-func GenerateJWT(email string) (string, error) {
-	user, err := repositories.GetUserByEmail(email)
-	if err != nil {
-		return "", err
-	}
-	return GenerateJWTByUser(user)
-}
-
-// ---------------- OTP Functions ---------------- //
-
-const otpLength = 6
-const otpExpiry = 5 * time.Minute
-
-func generateRandomOTP() string {
-	rand.Seed(time.Now().UnixNano())
-	digits := "0123456789"
-	otp := make([]byte, otpLength)
-	for i := range otp {
-		otp[i] = digits[rand.Intn(len(digits))]
-	}
-	return string(otp)
-}
-
-// Send OTP to user (email or phone)
-func SendOTP(email, phone string) error {
-	otp := generateRandomOTP()
-	expiration := time.Now().Add(otpExpiry)
-
-	// Save OTP in database
-	if err := repositories.SaveOTP(email, phone, otp, expiration); err != nil {
-		return err
-	}
-
-	// Send OTP via email/SMS (implement your own)
-	// Example: sendEmail(email, otp) or sendSMS(phone, otp)
-	return nil
-}
-
-// Resend OTP (can reuse SendOTP)
-func ResendOTP(email, phone string) error {
-	return SendOTP(email, phone)
-}
-
-// Verify OTP
-func VerifyOTP(email, phone, otp string) (*models.User, error) {
-	storedOTP, expiration, err := repositories.GetOTP(email, phone)
-	if err != nil {
-		return nil, errors.New("OTP not found")
-	}
-
-	if time.Now().After(expiration) {
-		return nil, errors.New("OTP expired")
-	}
-
-	if storedOTP != otp {
-		return nil, errors.New("Invalid OTP")
-	}
-
-	// Fetch user by email/phone
-	user, err := repositories.GetUserByEmail(email)
-	if err != nil {
-		return nil, errors.New("user not found")
-	}
-
-	_ = repositories.DeleteOTP(email, phone)
-
-	return user, nil
+	return token.SignedString([]byte(config.AppConfig.JWTSecret))
 }
