@@ -25,6 +25,7 @@ var AppConfig Config
 
 func LoadConfig() {
 	err := godotenv.Load()
+
 	if err != nil {
 		log.Println("No .env file found")
 	}

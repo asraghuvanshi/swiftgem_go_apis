@@ -17,6 +17,5 @@ func main() {
 	r.Use(gin.Recovery())
 
 	routes.SetupRoutes(r)
-
 	r.Run(":" + config.AppConfig.Port)
 }

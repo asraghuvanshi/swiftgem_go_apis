@@ -2,10 +2,12 @@ package services
 
 import (
 	"crypto/rand"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
 	"math/big"
+	"net"
 	"net/smtp"
 	"swiftgem_go_apis/internal/config"
 	"swiftgem_go_apis/internal/models"
@@ -27,19 +29,68 @@ func GenerateOTP() (string, error) {
 func SendOTP(email, otp string) error {
 	from := config.AppConfig.MailFrom
 	to := []string{email}
+
 	msg := []byte(fmt.Sprintf("To: %s\r\n"+
 		"Subject: Your OTP Code\r\n"+
 		"\r\n"+
 		"Your OTP is: %s\r\n", email, otp))
 
-	auth := smtp.PlainAuth("", config.AppConfig.MailUsername, config.AppConfig.MailPassword, config.AppConfig.MailHost)
 	addr := fmt.Sprintf("%s:%s", config.AppConfig.MailHost, config.AppConfig.MailPort)
-	err := smtp.SendMail(addr, auth, from, to, msg)
+
+	conn, err := net.Dial("tcp", addr)
 	if err != nil {
-		log.Printf("Failed to send OTP to %s: %v", email, err)
-		return fmt.Errorf("failed to send OTP: %w", err)
+		return fmt.Errorf("failed to connect to mail server: %w", err)
 	}
-	log.Printf("OTP sent to %s", email)
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, config.AppConfig.MailHost)
+	if err != nil {
+		return fmt.Errorf("failed to create SMTP client: %w", err)
+	}
+	defer client.Close()
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: true,
+		ServerName:         config.AppConfig.MailHost,
+	}
+
+	if ok, _ := client.Extension("STARTTLS"); ok {
+		if err = client.StartTLS(tlsConfig); err != nil {
+			return fmt.Errorf("failed to start TLS: %w", err)
+		}
+	}
+
+	auth := smtp.PlainAuth("", config.AppConfig.MailUsername, config.AppConfig.MailPassword, config.AppConfig.MailHost)
+	if err = client.Auth(auth); err != nil {
+		return fmt.Errorf("SMTP authentication failed: %w", err)
+	}
+
+	if err = client.Mail(from); err != nil {
+		return fmt.Errorf("MAIL FROM failed: %w", err)
+	}
+	for _, recipient := range to {
+		if err = client.Rcpt(recipient); err != nil {
+			return fmt.Errorf("RCPT TO failed: %w", err)
+		}
+	}
+
+	w, err := client.Data()
+	if err != nil {
+		return fmt.Errorf("failed to send DATA: %w", err)
+	}
+
+	_, err = w.Write(msg)
+	if err != nil {
+		return fmt.Errorf("failed to write message: %w", err)
+	}
+
+	err = w.Close()
+	if err != nil {
+		return fmt.Errorf("failed to close message writer: %w", err)
+	}
+
+	client.Quit()
+
+	log.Printf("OTP sent successfully to %s", email)
 	return nil
 }
 
@@ -55,7 +106,6 @@ func Signup(user *models.User) error {
 	}
 	user.Password = string(hashedPass)
 	user.IsVerified = false
-	// OTP and OTPExpiry are not set here; will be set in SendOTPService
 
 	err = repositories.CreateUser(user)
 	if err != nil {
@@ -91,7 +141,6 @@ func SendOTPService(email string) error {
 }
 
 func ResendOTP(email string) error {
-	// Same logic as SendOTPService; kept separate for clarity
 	user, err := repositories.GetUserByEmail(email)
 	if err != nil {
 		return errors.New("user not found")
@@ -121,6 +170,10 @@ func VerifyOTP(email, otp string) error {
 	if err != nil {
 		return errors.New("user not found")
 	}
+
+	log.Printf("Verify attempt - Input OTP: '%s' (len: %d)", otp, len(otp))
+	log.Printf("Stored OTP: '%s' (len: %d)", user.OTP, len(user.OTP))
+	log.Printf("Expiry: %v, Now: %v, Is Expired: %t", user.OTPExpiry, time.Now(), time.Now().After(user.OTPExpiry))
 
 	if user.OTP != otp || time.Now().After(user.OTPExpiry) {
 		return errors.New("invalid or expired OTP")
