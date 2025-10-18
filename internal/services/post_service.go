@@ -2,14 +2,16 @@
 package services
 
 import (
+	"swiftgem_go_apis/internal/db"
 	"swiftgem_go_apis/internal/models"
-	"swiftgem_go_apis/internal/repositories"
 )
 
 func CreatePost(post *models.Post) error {
-	return repositories.CreatePost(post)
+	return db.DB.Create(post).Error
 }
 
-func GetHomePosts(userID uint) ([]models.Post, error) {
-	return repositories.GetPostsForUser(userID)
+func GetPosts() ([]models.Post, error) {
+	var posts []models.Post
+	err := db.DB.Order("created_at DESC").Find(&posts).Error
+	return posts, err
 }

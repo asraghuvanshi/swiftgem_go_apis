@@ -10,9 +10,8 @@ func CreatePost(post *models.Post) error {
 	return db.DB.Create(post).Error
 }
 
-func GetPostsForUser(userID uint) ([]models.Post, error) {
+func GetPosts() ([]models.Post, error) {
 	var posts []models.Post
-	// Example: get all posts, in real: filter by follows etc.
-	err := db.DB.Find(&posts).Error
+	err := db.DB.Order("created_at DESC").Find(&posts).Error
 	return posts, err
 }

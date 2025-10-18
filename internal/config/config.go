@@ -19,6 +19,7 @@ type Config struct {
 	MailUsername     string
 	MailPassword     string
 	MailFrom         string
+	UploadDir        string // Add this for image storage path
 }
 
 var AppConfig Config
@@ -40,6 +41,8 @@ func LoadConfig() {
 		MailUsername:     getEnv("MAIL_USERNAME", ""),
 		MailPassword:     getEnv("MAIL_PASSWORD", ""),
 		MailFrom:         getEnv("MAIL_FROM", "swiftgem@csupport.test"),
+		UploadDir:        getEnv("Upload_Dir","uploads"),
+
 	}
 }
 
