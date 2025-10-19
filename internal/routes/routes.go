@@ -11,6 +11,7 @@ import (
 func SetupRoutes(r *gin.Engine) {
 	v1 := r.Group("/v1")
 	{
+		// Authentication routes
 		auth := v1.Group("/auth")
 		{
 			auth.POST("/signup", handlers.Signup)
@@ -20,13 +21,16 @@ func SetupRoutes(r *gin.Engine) {
 			auth.POST("/login", handlers.Login)
 		}
 
+		// Public routes
+		v1.GET("/home/posts", handlers.GetHomePosts)
+
 		// Protected routes
 		protected := v1.Group("")
 		protected.Use(middlewares.JWTAuth())
 		{
 			protected.POST("/posts", handlers.CreatePost)
-			protected.GET("/home/posts", handlers.GetHomePosts)
-			// Add more: user/profile, chats, etc.
+			protected.PUT("/posts/:id", handlers.EditPost)
+			protected.DELETE("/posts/:id", handlers.DeletePost)
 		}
 	}
 }

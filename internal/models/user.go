@@ -10,6 +10,7 @@ type User struct {
 	Password   string    `json:"password" binding:"required,min=6"`
 	Phone      string    `json:"phoneNumber" binding:"required"`
 	Gender     string    `json:"gender" binding:"required,oneof=Male Female Other"`
+	Role       string    `json:"role" gorm:"default:user"`
 	OTP        string    `json:"-"`
 	OTPExpiry  time.Time `json:"-"`
 	IsVerified bool      `json:"-"`
