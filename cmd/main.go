@@ -19,7 +19,8 @@ func main() {
 
 	routes.SetupRoutes(r)
 	// Create uploads directory
-	r.Static("/v1/uploads", "./uploads")
+	// r.Static("/v1/uploads", "./uploads")
+	r.Static("/uploads", "./uploads")
 	os.MkdirAll(config.AppConfig.UploadDir, 0755)
 	r.Run(":" + config.AppConfig.Port)
 }
